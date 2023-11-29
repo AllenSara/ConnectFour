@@ -9,18 +9,20 @@ class ConnectEnv(Env):
     # set variables for size of columns and rows to use throughout the game
     ROW_COUNT = 6
     COLUMN_COUNT = 7
+
+    # set amount in a row needed to win
     WINDOW_LENGTH = 4
 
-    # set player variables
+    # set player variables (used for turns)
     PLAYER = 0
     AI = 1
 
-    # set piece variables
+    # set piece variables (used to fill board)
     EMPTY = 0
     PLAYER_PIECE = 1
     AI_PIECE = 2
 
-    # create board by making a 6 by 7 matrix of all zeros
+    # create board by making a matrix of all zeros using the predefined row and column sizes
     def create_board(self):
         board = np.zeros((self.ROW_COUNT, self.COLUMN_COUNT)).astype(int)  # uses numpy
         return board
@@ -45,7 +47,7 @@ class ConnectEnv(Env):
     def print_board(self, board):
         print(np.flip(board, 0))
 
-    # check for each possible winning move on the board
+    # checks if someone won the game by checking whole board for four in a row
     def winning_move(self, board, piece):
         # Check all horizontal locations for win:
         # loop through each column, meaning starting at the left or zero index and iterate to the right
@@ -96,7 +98,7 @@ class ConnectEnv(Env):
         else:
             return False
 
-    # returns an array of all the valid locations, AI player uses this so its choices are always valid
+    # returns an array of all the valid locations, AI player uses this so its moves are always valid
     def get_valid_locations(self, board):
         valid_locations = []
         for col in range(self.COLUMN_COUNT):
@@ -104,10 +106,12 @@ class ConnectEnv(Env):
                 valid_locations.append(col)
         return valid_locations
 
-    # calculates a score based on an inputted window of four spaces, used for both the model and the min max
+    # calculates a score based on winning potential of an inputted window of four spaces
+    # used for both the model and the min max
     def evaluate_window(self, window, piece):
         score = 0  # initialize score
 
+        # set which player to calculate the score for
         model = False
         opp_piece = self.PLAYER_PIECE
         if piece == self.PLAYER_PIECE:
@@ -126,6 +130,9 @@ class ConnectEnv(Env):
             if window.count(opp_piece) == 3 and window.count(
                     piece) == 1:  # add score if there are 3 of the opponents pieces and the player blocked the 4 spot
                 score += 3
+            # add score if player blocked two in a row from opponent
+            # this method sometimes calculates points not reflected on the players move
+            # for this reason the added score is very low
             elif window.count(opp_piece) == 2 and window.count(piece) == 1 and window.count(self.EMPTY) == 1:
                 score += 0.05
         else:
@@ -216,10 +223,8 @@ class ConnectEnv(Env):
         self.reward = 0
 
     # Does the actions, basically checks which player is playing and then drops a piece for them accordingly
-    def step(self, action, epsilon):
+    def step(self, action=1, epsilon=0.999985):
         if self.turn == self.AI:
-            # print("ai:")
-            # col = int(input())
             col = self.pick_best_move(self.observation_space)
             if self.is_valid_location(self.observation_space, col):
                 # finds the row the piece will be dropped in for the chosen column

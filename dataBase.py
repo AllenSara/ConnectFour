@@ -1,4 +1,5 @@
 # Imports from Environment and date modules
+# this class stores data and sends it toan external database
 from imports import *
 
 date = datetime.today()

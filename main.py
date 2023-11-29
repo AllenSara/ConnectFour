@@ -1,4 +1,4 @@
-from memory import Memory
+from memory import *
 from NNFunctions import *
 from dataBase import *
 from ConnectEnv import *
@@ -35,6 +35,7 @@ else:
     model = q_learning_nn()
     print("new model")
 
+# initializes the epsilon, either from the existing epsilon or by creating a new one
 if Path('epsilon.txt').is_file():
     with open('epsilon.txt', 'r') as f:
         epsilon = f.read()
@@ -43,30 +44,32 @@ else:
     epsilon = 1
     print("new epsilon")
 
+# try to run model for set amount of episodes
 try:
 
     # Loop through each episode
     for episode in range(num_episodes):
 
-        # Reset the game
+        # Reset the game variables to their starting state
         game.reset()
 
-        # Get the initial/blank state
+        # Set the initial/blank state for the board
         state = game.create_board()
 
-        # Calls the clear method on the memory object, which resets/restarts the memory
-
+        # Set for first time/decrease the epsilon slightly for each game
         epsilon = float(epsilon) * 0.999985
-        # print(epsilon)
 
         print(f'Game Number: {episode + 1}')
-        # Loop for each individual game
+
+        # Loop which runs for each individual game until the game ends
         while not game.game_over == True:
+
+            # Turn for the player AKA the model being trained
             if game.turn == game.PLAYER:
-                # Change shape of state so the prediction model can understand it and return the right action options (0-6)
+                # reshape state for prediction model, so it can return an action option between 0-6
                 reshaped_state = np.array(state).reshape(1, 6, 7, 1).copy()
 
-                # Make a prediction using the Q values and the reshaped state
+                # Create the Q values using the reshaped state
                 # the Q value is a measure of the overall expected reward based on the action
                 q_values = model.predict(reshaped_state)
 
@@ -79,63 +82,61 @@ try:
                 action_weights_sorted = sorted(enumerate(action_weights[0]), key=lambda i: i[1], reverse=True)
 
                 # Find a valid action: Loop through action options from the q_values
+                # Because they're sorted from highest to lowest, starts at first one and uses first valid action option
                 for action_test in enumerate(action_weights_sorted):
 
                     # Check if the action is valid, if not the for loop will move to the next highest weight
                     # The use of action[1][0] extracts the column for the action from the action tuple
                     if action_test[1][0] in game.get_valid_locations(state):
 
-                        # Now that we have a valid column, do the action (step function) and save the variables
+                        # Use valid column to drop the piece (step), and save the variables
                         reward, next_state, action = game.step(action_test[1][0], epsilon)
-                        # print(f'action: {action}')
-                        # print(f'reward: {reward}')
 
-
-
-                        # Set the current state to the next state
-                        state = next_state
-
-                        # Adds the current observation, action, and reward to the memory
-                        # bc the turn switches when we run the step, check if action was taken and then save it
+                        # check if valid action was taken by seeing if the turn was switched to AI (the end of the step)
                         if game.turn == game.AI:
+
+                            # add the newest state (board), action taken, and calculate reward to the memory
+                            # this will be used at the end of the game to calculate the reward
                             memory.add_to_memory(state, action, reward)
 
-                        # break once a valid action is taken
+                        # break once a valid action is taken and then run the next move or end the game
                         break
 
+            # run the AIs turn AKA the algorithm that uses calculated moves
             elif game.turn == game.AI:
-                # We need to input an action into the step, but this action (1) will not be used
-                reward, next_state, action = game.step(1, epsilon)
-                state = next_state
 
-                # There's no else here for the case where the entire board is full
-                # it should be caught in the while loop above in "game_over", but maybe add an extra check here
-        # print(memory.observations)
-        # print(memory.actions)
-        # print(memory.rewards)
-        # Train the model using the train_step function
+                # Run the game and save the variables, the reward and action will not be used
+                reward, next_state, action = game.step()
+
+            # Set the current state (board) to the new state (board) with the newly dropped piece
+            state = next_state
+
+        # Train the model by inputting the memory of the game in the train_step function
         loss = train_step(model, optimizer=tf.keras.optimizers.Adam(LEARNING_RATE),
                           observations=np.array(memory.observations), actions=np.array(memory.actions),
                           rewards=memory.rewards)
 
-        # Upload data to database
+        # shape and then upload data to mongoDB database
         state = state.tolist()
         Database.update_db(episode, game.winner, loss, epsilon, state)
-        if (episode+1) % 5000 == 0:
 
-            # Save trained model after session - iteration, date and time.
-            model.save(f'Iteration_{episode}_Date-{date}-Time-{hour}{minute}{second}.h5')
+        # Save the trained model to an h5 file after every 5000th game - iteration, date and time
+        # these models are backups. They use the iteration and time to have a unique value and will not overwrite files
+        if (episode+1) % 5000 == 0:
+            model.save(f'Iteration_{episode+1}_Date-{date}-Time-{hour}{minute}{second}.h5')
             print(f'Saved model number {episode}')
 
+        # clear the memory and database variables, so they can be used for the next game
         memory.clear()
         Database.clean()
-finally:
 
+# after all episodes are finished, save the model to be used for the next set of runs or just to play against
+# this model has the same name and will thus overwrite the initial model used
+finally:
     model.save(f'connect_four_model.h5')
     print(f'Final episode number {episode + 1}')
 
-
+# save the epsilon to a txt file which can be used for the next set of runs
 with open('epsilon.txt', 'w') as f:
     f.write(str(epsilon))
     print(f'Epsilon: {epsilon}')
-
